@@ -1,0 +1,9 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="dna-man/dna-man.vcxproj" Id="cce500f0-349e-4d48-ad49-97d8c6f40dff">
+    <Platform Solution="Debug|x64" Project="Win32" />
+  </Project>
+</Solution>
