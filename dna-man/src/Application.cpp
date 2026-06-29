@@ -7,42 +7,65 @@
 #include <ctime>
 #include <queue>
 
-// Prototypes
-//void init();
-//void display();
-//void update(int value);
-//void specialKeys(int key, int x, int y);
-//void passiveMouse(int x, int y);
-//void mouseClicks(int button, int state, int x, int y);
-//
-//void resetGame();
-//bool isWall(float x, float y);
-//bool isTileReachable(int targetX, int targetY);
-//void spawnNucleotideOnMap(char nuc);
-//Point getBFSDirection(int startX, int startY, int targetX, int targetY);
-//
-//void renderMenu();
-//void renderGame();
-//void renderGameOver(bool won);
-//void drawText(int x, int y, std::string text, void* font = GLUT_BITMAP_HELVETICA_18);
-//void drawHeart(int cx, int cy, int size);
-//bool isMouseOverButton(int bx, int by, int bw, int bh);
+// audio integration
+#ifdef _WIN32
+#include <windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib") 
+#endif
 
-// Game States
-enum State { MENU, GAME, GAME_OVER, WIN };
+void startBackgroundMusic() {
+#ifdef _WIN32
+    PlaySound(TEXT("audio/game_loop02.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_LOOP | SND_NODEFAULT);
+#endif
+}
+
+void playEatSound() {
+#ifdef _WIN32
+    mciSendString(TEXT("close ch1"), NULL, 0, NULL); // Reset if it was already open
+    mciSendString(TEXT("open \"audio/coin_earn.wav\" type waveaudio alias ch1"), NULL, 0, NULL);
+    mciSendString(TEXT("play ch1 from 0"), NULL, 0, NULL);
+#endif
+}
+
+void playGameOverSound() {
+#ifdef _WIN32
+    PlaySound(NULL, 0, 0);
+    mciSendString(TEXT("close ch2"), NULL, 0, NULL);
+    mciSendString(TEXT("open \"audio/game_over.wav\" type waveaudio alias ch2"), NULL, 0, NULL);
+    mciSendString(TEXT("play ch2 from 0"), NULL, 0, NULL);
+#endif
+}
+
+void playResurrectionSound() {
+#ifdef _WIN32
+    // Opens and plays a brief life-lost/respawn alert effect on channel 3
+    mciSendString(TEXT("close ch3"), NULL, 0, NULL);
+    mciSendString(TEXT("open \"audio/resurrection_of_player.wav\" type waveaudio alias ch3"), NULL, 0, NULL);
+    mciSendString(TEXT("play ch3 from 0"), NULL, 0, NULL);
+#endif
+}
+
+// Game States (Added DIFFICULTY_SELECT stage)
+enum State { MENU, DIFFICULTY_SELECT, GAME, GAME_OVER, WIN };
 State gameState = MENU;
 
 const int WINDOW_WIDTH = 800;
 const int WINDOW_HEIGHT = 600;
 
-
 int mouseX = 0, mouseY = 0;
 
+// Button Coordinates & Offsets
 const int BTN_WIDTH = 200;
 const int BTN_HEIGHT = 50;
 const int START_BTN_Y = 250;
 const int EXIT_BTN_Y = 170;
 const int RESTART_BTN_Y = 200;
+
+// Difficulty Specific Button Positions
+const int EASY_BTN_Y = 320;
+const int MEDIUM_BTN_Y = 240;
+const int HARD_BTN_Y = 160;
 
 // Map Setup (0: Empty, 1: Wall, 2: Dot, 3: 'A', 4: 'T', 5: 'G', 6: 'C')
 const int MAP_ROWS = 15;
@@ -68,7 +91,7 @@ int maze[MAP_ROWS][MAP_COLS];
 
 const int TILE_SIZE = 30;
 const int MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
-const int MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40; // Shifted lower to fit hearts HUD
+const int MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
 
 // Game Elements
 float dnamanX, dnamanY;
@@ -76,7 +99,7 @@ float dnamanSpeed = 0.09f;
 int dirX = 0, dirY = 0;
 int nextDirX = 0, nextDirY = 0;
 int score = 0;
-int lives = 5; // --- Target 5-life system initialization ---
+int lives = 5;
 
 std::string targetSequence = "";
 std::string collectedSequence = "";
@@ -104,10 +127,7 @@ bool isMouseOverButton(int bx, int by, int bw, int bh) {
 }
 
 bool isTileReachable(int targetX, int targetY) {
-    // if the target tile itself is a wall, it's obviously unreachable
     if (initialMaze[targetY][targetX] == 1) return false;
-
-    // start checking from dnaman's reliable spawn anchor point (9, 7)
     int startX = 9, startY = 7;
     if (startX == targetX && startY == targetY) return true;
 
@@ -125,7 +145,7 @@ bool isTileReachable(int targetX, int targetY) {
         q.pop();
 
         if (curr.x == targetX && curr.y == targetY) {
-            return true; //path exists!
+            return true;
         }
 
         for (int i = 0; i < 4; i++) {
@@ -133,7 +153,6 @@ bool isTileReachable(int targetX, int targetY) {
             int ny = curr.y + dy[i];
 
             if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS) {
-                // Only traverse through walkable floor paths
                 if (!visited[ny][nx] && initialMaze[ny][nx] != 1) {
                     visited[ny][nx] = true;
                     q.push({ nx, ny });
@@ -141,10 +160,9 @@ bool isTileReachable(int targetX, int targetY) {
             }
         }
     }
-    return false; // Trapped or isolated zone
+    return false;
 }
 
-// Spawns nucleotide tokens on free floor spaces
 void spawnNucleotideOnMap(char nuc) {
     int type = 3;
     if (nuc == 'T') type = 4;
@@ -154,33 +172,26 @@ void spawnNucleotideOnMap(char nuc) {
     while (true) {
         int r = rand() % MAP_ROWS;
         int c = rand() % MAP_COLS;
-
-        // Is it a floor tile? 
-        // CHANGED: Can dnaman actually walk there from the center?
         if ((maze[r][c] == 0 || maze[r][c] == 2) && isTileReachable(c, r)) {
             maze[r][c] = type;
             break;
         }
     }
 }
-// Dynamic vector rendering routine that generates heart shapes using math equations
+
 void drawHeart(int cx, int cy, int size) {
-    glColor3f(1.0f, 0.2f, 0.2f); // Vibrant Crimson heart shade
+    glColor3f(1.0f, 0.2f, 0.2f);
     glBegin(GL_TRIANGLE_FAN);
-    glVertex2i(cx, cy - size / 4); // Center core anchor
+    glVertex2i(cx, cy - size / 4);
     for (int angle = 0; angle <= 360; angle += 10) {
         float rad = angle * 3.14159f / 180.0f;
-        // Mathematical Parametric Heart Curve Formula definitions
         float x = 16 * pow(sin(rad), 3);
         float y = 13 * cos(rad) - 5 * cos(2 * rad) - 2 * cos(3 * rad) - cos(4 * rad);
-
-        // Rescale mapping coordinates to targeted screen alignment pixels
         glVertex2f(cx + (x / 16.0f) * size, cy + (y / 16.0f) * size);
     }
     glEnd();
 }
 
-// Queue-Based shortest grid distance seeker 
 Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
     if (startX == targetX && startY == targetY) return { 0, 0 };
 
@@ -224,13 +235,12 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
     while (parent[curr.y][curr.x].x != startX || parent[curr.y][curr.x].y != startY) {
         curr = parent[curr.y][curr.x];
     }
-
     return { curr.x - startX, curr.y - startY };
 }
 
 void resetGame() {
     score = 0;
-    lives = 5; // Reset capacity bounds back to 5
+    lives = 5;
     collectedSequence = "";
     dnamanX = 9.0f;
     dnamanY = 7.0f;
@@ -250,16 +260,11 @@ void resetGame() {
         spawnNucleotideOnMap(nuc);
     }
 
-    // ==========================================
-    // FUTURE DEVELOPMENT AREA: INCREASE GHOST SPEEDS PER LEVEL
-    // ==========================================
     float baselineSpeed = 0.025f;
     enzymes.clear();
-
-    // CHANGED: Moved all enzymes to the far outer corners of the maze matrix
-    enzymes.push_back({ 1.0f,  1.0f,   1.0f, 0.2f, 0.2f, baselineSpeed }); // Bottom-Left Corner (Red EcoRI)
-    enzymes.push_back({ 1.0f,  13.0f,  0.2f, 0.9f, 0.2f, baselineSpeed }); // Top-Left Corner (Green HindIII)
-    enzymes.push_back({ 17.0f, 13.0f,  1.0f, 0.5f, 0.0f, baselineSpeed }); // Top-Right Corner (Orange BamHI)
+    enzymes.push_back({ 1.0f,  1.0f,   1.0f, 0.2f, 0.2f, baselineSpeed });
+    enzymes.push_back({ 1.0f,  13.0f,  0.2f, 0.9f, 0.2f, baselineSpeed });
+    enzymes.push_back({ 17.0f, 13.0f,  1.0f, 0.5f, 0.0f, baselineSpeed });
 }
 
 void renderMenu() {
@@ -284,10 +289,38 @@ void renderMenu() {
     glutSwapBuffers();
 }
 
+// Intermediate Screen View Implementation
+void renderDifficultySelect() {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(WINDOW_WIDTH / 2 - 140, 450, "SELECT GAME DIFFICULTY", GLUT_BITMAP_TIMES_ROMAN_24);
+
+    int btnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
+
+    // Easy Button
+    glColor3f(isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.6f, 0.2f);
+    glRecti(btnX, EASY_BTN_Y, btnX + BTN_WIDTH, EASY_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 75, EASY_BTN_Y + 18, "EASY");
+
+    // Medium Button
+    glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.4f, 0.1f);
+    glRecti(btnX, MEDIUM_BTN_Y, btnX + BTN_WIDTH, MEDIUM_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 60, MEDIUM_BTN_Y + 18, "MEDIUM");
+
+    // Hard Button
+    glColor3f(isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.7f : 0.5f, 0.1f, 0.1f);
+    glRecti(btnX, HARD_BTN_Y, btnX + BTN_WIDTH, HARD_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 75, HARD_BTN_Y + 18, "HARD");
+
+    glutSwapBuffers();
+}
+
 void renderGame() {
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // --- Enhanced Layout Header HUD Block Display ---
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(30, WINDOW_HEIGHT - 30, "TARGET SEQUENCE: " + targetSequence, GLUT_BITMAP_HELVETICA_18);
 
@@ -297,15 +330,12 @@ void renderGame() {
     glColor3f(1.0f, 0.84f, 0.0f);
     drawText(WINDOW_WIDTH - 150, WINDOW_HEIGHT - 30, "SCORE: " + std::to_string(score));
 
-    // --- Dynamic Hearts Drawing Routine ---
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(WINDOW_WIDTH - 200, WINDOW_HEIGHT - 55, "LIVES:", GLUT_BITMAP_HELVETICA_12);
     for (int i = 0; i < lives; i++) {
-        // Space structural hearts 22 pixels apart sequentially inside HUD rows
         drawHeart(WINDOW_WIDTH - 140 + (i * 22), WINDOW_HEIGHT - 50, 14);
     }
 
-    // Render Grid Level Maps
     for (int r = 0; r < MAP_ROWS; r++) {
         for (int c = 0; c < MAP_COLS; c++) {
             int x = MAP_OFFSET_X + c * TILE_SIZE;
@@ -330,9 +360,9 @@ void renderGame() {
                 else if (letter == 'C') glColor3f(1.0f, 0.4f, 1.0f);
 
                 glBegin(GL_LINE_LOOP);
-                glVertex2i(x + 4, y + 4); 
+                glVertex2i(x + 4, y + 4);
                 glVertex2i(x + TILE_SIZE - 4, y + 4);
-                glVertex2i(x + TILE_SIZE - 4, y + TILE_SIZE - 4); 
+                glVertex2i(x + TILE_SIZE - 4, y + TILE_SIZE - 4);
                 glVertex2i(x + 4, y + TILE_SIZE - 4);
                 glEnd();
 
@@ -342,7 +372,6 @@ void renderGame() {
         }
     }
 
-    // Draw dnaman
     int pacX = MAP_OFFSET_X + (int)(dnamanX * TILE_SIZE) + TILE_SIZE / 2;
     int pacY = MAP_OFFSET_Y + (int)((MAP_ROWS - 1 - dnamanY) * TILE_SIZE) + TILE_SIZE / 2;
     glColor3f(1.0f, 1.0f, 0.0f);
@@ -354,7 +383,6 @@ void renderGame() {
     }
     glEnd();
 
-    // Draw enzymes
     for (const auto& g : enzymes) {
         int gx = MAP_OFFSET_X + (int)(g.x * TILE_SIZE) + TILE_SIZE / 2;
         int gy = MAP_OFFSET_Y + (int)((MAP_ROWS - 1 - g.y) * TILE_SIZE) + TILE_SIZE / 2;
@@ -375,7 +403,6 @@ void renderGame() {
 
 void renderGameOver(bool won) {
     glClear(GL_COLOR_BUFFER_BIT);
-
     if (won) {
         glColor3f(0.0f, 1.0f, 0.0f);
         drawText(WINDOW_WIDTH / 2 - 130, 400, "SYNTHESIS SUCCESSFUL!", GLUT_BITMAP_TIMES_ROMAN_24);
@@ -398,6 +425,7 @@ void renderGameOver(bool won) {
 
 void display() {
     if (gameState == MENU) renderMenu();
+    else if (gameState == DIFFICULTY_SELECT) renderDifficultySelect();
     else if (gameState == GAME) renderGame();
     else if (gameState == GAME_OVER) renderGameOver(false);
     else if (gameState == WIN) renderGameOver(true);
@@ -412,7 +440,6 @@ bool isWall(float x, float y) {
 
 void update(int value) {
     if (gameState == GAME) {
-        // --- 1. dnaman Movement Navigation ---
         if ((nextDirX != 0 || nextDirY != 0) && !isWall(dnamanX + nextDirX * 0.5f, dnamanY + nextDirY * 0.5f)) {
             dirX = nextDirX; dirY = nextDirY;
         }
@@ -425,10 +452,10 @@ void update(int value) {
         int pCellX = (int)(dnamanX + 0.5f);
         int pCellY = (int)(dnamanY + 0.5f);
 
-        // --- 2. Collection Checking Routine ---
         if (maze[pCellY][pCellX] == 2) {
             maze[pCellY][pCellX] = 0;
             score += 10;
+            playEatSound();
         }
         else if (maze[pCellY][pCellX] >= 3 && maze[pCellY][pCellX] <= 6) {
             char eaten = nucChars[maze[pCellY][pCellX] - 3];
@@ -438,16 +465,17 @@ void update(int value) {
             if (eaten == expected) {
                 collectedSequence += eaten;
                 score += 100;
+                playEatSound();
                 if (collectedSequence == targetSequence) {
                     gameState = WIN;
                 }
             }
             else {
-                gameState = GAME_OVER; // Wrong tile choice triggers game over instantly
+                playGameOverSound();
+                gameState = GAME_OVER;
             }
         }
 
-        // --- 3. Ghost BFS Tracking ---
         for (auto& g : enzymes) {
             int gCellX = (int)floor(g.x + 0.5f);
             int gCellY = (int)floor(g.y + 0.5f);
@@ -465,14 +493,15 @@ void update(int value) {
                 if (fabs(diffY) > 0.1f) g.y += (diffY > 0 ? 1 : -1) * g.speed;
             }
 
-            // --- 4. Collision Check System (Lives Modifiers) ---
             if (fabs(dnamanX - g.x) < 0.6f && fabs(dnamanY - g.y) < 0.6f) {
                 lives--;
-
                 if (lives <= 0) {
+                    playGameOverSound();
                     gameState = GAME_OVER;
                     break;
                 }
+
+                playResurrectionSound();
 
                 if (!collectedSequence.empty()) {
                     char removed = collectedSequence.back();
@@ -480,14 +509,12 @@ void update(int value) {
                     spawnNucleotideOnMap(removed);
                 }
 
-                // Reset dnaman to the center channel
                 dnamanX = 9.0f; dnamanY = 7.0f;
                 dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
-                // CHANGED: Match the new far corner coordinates for the respawn reset
-                enzymes[0].x = 1.0f;  enzymes[0].y = 1.0f;   // Bottom-Left
-                enzymes[1].x = 1.0f;  enzymes[1].y = 13.0f;  // Top-Left
-                enzymes[2].x = 17.0f; enzymes[2].y = 13.0f;  // Top-Right
+                enzymes[0].x = 1.0f;  enzymes[0].y = 1.0f;
+                enzymes[1].x = 1.0f;  enzymes[1].y = 13.0f;
+                enzymes[2].x = 17.0f; enzymes[2].y = 13.0f;
                 break;
             }
         }
@@ -514,7 +541,7 @@ void passiveMouse(int x, int y) {
     mouseX = (int)(((float)x / currentWidth) * WINDOW_WIDTH);
     mouseY = (int)(((float)(currentHeight - y) / currentHeight) * WINDOW_HEIGHT);
 
-    if (gameState == MENU || gameState == GAME_OVER || gameState == WIN) {
+    if (gameState == MENU || gameState == DIFFICULTY_SELECT || gameState == GAME_OVER || gameState == WIN) {
         glutPostRedisplay();
     }
 }
@@ -530,17 +557,33 @@ void mouseClicks(int button, int state, int x, int y) {
 
         if (gameState == MENU) {
             if (isMouseOverButton(btnX, START_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                resetGame();
-                gameState = GAME;
+                // Instantly transitions to the new difficulty setup window
+                gameState = DIFFICULTY_SELECT;
             }
             else if (isMouseOverButton(btnX, EXIT_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 glutLeaveMainLoop();
             }
         }
-        else if (gameState == GAME_OVER || gameState == WIN) {
-            if (isMouseOverButton(btnX, RESTART_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+        else if (gameState == DIFFICULTY_SELECT) {
+            if (isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                // Easy option loads map and initial setup
                 resetGame();
                 gameState = GAME;
+            }
+            else if (isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                // Placeholder for medium difficulty
+                std::cout << "Medium chosen (Unimplemented functionality placeholder)" << std::endl;
+            }
+            else if (isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                // Placeholder for hard difficulty
+                std::cout << "Hard chosen (Unimplemented functionality placeholder)" << std::endl;
+            }
+        }
+        else if (gameState == GAME_OVER || gameState == WIN) {
+            if (isMouseOverButton(btnX, RESTART_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                // Sending players straight back to selection options on loop restart
+                gameState = DIFFICULTY_SELECT;
+                startBackgroundMusic();
             }
         }
     }
@@ -562,6 +605,7 @@ int main(int argc, char** argv) {
     glutCreateWindow("Bio-Sequence Pac-Man");
 
     init();
+    startBackgroundMusic();
 
     glutDisplayFunc(display);
     glutSpecialFunc(specialKeys);
