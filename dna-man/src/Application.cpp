@@ -46,6 +46,9 @@ void playResurrectionSound() {
 #endif
 }
 
+enum Difficulty { EASY, MEDIUM, HARD };
+Difficulty currentDifficulty = EASY;
+
 // Game States (Added DIFFICULTY_SELECT stage)
 enum State { MENU, DIFFICULTY_SELECT, GAME, GAME_OVER, WIN };
 State gameState = MENU;
@@ -87,6 +90,18 @@ int initialMaze[MAP_ROWS][MAP_COLS] = {
     {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
+int mediumMaze[MAP_ROWS][MAP_COLS] = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1},
+    // ... 
+};
+
+int hardMaze[MAP_ROWS][MAP_COLS] = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,0,1,0,1,0,1,0,0,1,0,0,1,0,1,0,1,0,1},
+    // ... 
+};
+
 int maze[MAP_ROWS][MAP_COLS];
 
 const int TILE_SIZE = 30;
@@ -240,17 +255,34 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
 
 void resetGame() {
     score = 0;
-    lives = 5;
+    lives = (currentDifficulty == EASY) ? 5 : (currentDifficulty == MEDIUM ? 3 : 2);
     collectedSequence = "";
     dnamanX = 9.0f;
     dnamanY = 7.0f;
     dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
+    // 1. Point to the correct source matrix based on selected level
+    int (*selectedSourceMaze)[MAP_COLS] = mediumMaze; // Default fallback
+
+    if (currentDifficulty == EASY) {
+        selectedSourceMaze = initialMaze;
+    }
+    else if (currentDifficulty == MEDIUM) {
+        selectedSourceMaze = mediumMaze;
+    }
+    else if (currentDifficulty == HARD) {
+        selectedSourceMaze = hardMaze;
+    }
+
+    // 2. Copy the chosen layout into the active simulation maze array
     for (int r = 0; r < MAP_ROWS; r++) {
         for (int c = 0; c < MAP_COLS; c++) {
-            maze[r][c] = initialMaze[r][c];
+            maze[r][c] = selectedSourceMaze[r][c];
         }
     }
+
+ //----------   // --- NEW: Scale DNA Target Sequence Length based on difficulty --- TASKS
+ //----------   // --- NEW: Scale Enzyme (Ghost) Movement Speed --- TASKS
 
     int seqLength = 5 + (rand() % 2);
     targetSequence = "";
@@ -566,17 +598,19 @@ void mouseClicks(int button, int state, int x, int y) {
         }
         else if (gameState == DIFFICULTY_SELECT) {
             if (isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                // Easy option loads map and initial setup
+                currentDifficulty = EASY;
                 resetGame();
                 gameState = GAME;
             }
             else if (isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                // Placeholder for medium difficulty
-                std::cout << "Medium chosen (Unimplemented functionality placeholder)" << std::endl;
+                currentDifficulty = MEDIUM;
+                resetGame();
+                gameState = GAME;
             }
             else if (isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                // Placeholder for hard difficulty
-                std::cout << "Hard chosen (Unimplemented functionality placeholder)" << std::endl;
+                currentDifficulty = HARD;
+                resetGame();
+                gameState = GAME;
             }
         }
         else if (gameState == GAME_OVER || gameState == WIN) {
