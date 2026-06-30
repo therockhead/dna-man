@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <queue>
+using namespace std;
 
 // audio integration
 #ifdef _WIN32
@@ -22,7 +23,7 @@ void startBackgroundMusic() {
 
 void playEatSound() {
 #ifdef _WIN32
-    mciSendString(TEXT("close ch1"), NULL, 0, NULL); // Reset if it was already open
+    mciSendString(TEXT("close ch1"), NULL, 0, NULL);
     mciSendString(TEXT("open \"audio/coin_earn.wav\" type waveaudio alias ch1"), NULL, 0, NULL);
     mciSendString(TEXT("play ch1 from 0"), NULL, 0, NULL);
 #endif
@@ -39,7 +40,6 @@ void playGameOverSound() {
 
 void playResurrectionSound() {
 #ifdef _WIN32
-    // Opens and plays a brief life-lost/respawn alert effect on channel 3
     mciSendString(TEXT("close ch3"), NULL, 0, NULL);
     mciSendString(TEXT("open \"audio/resurrection_of_player.wav\" type waveaudio alias ch3"), NULL, 0, NULL);
     mciSendString(TEXT("play ch3 from 0"), NULL, 0, NULL);
@@ -49,8 +49,8 @@ void playResurrectionSound() {
 enum Difficulty { EASY, MEDIUM, HARD };
 Difficulty currentDifficulty = EASY;
 
-// Game States (Added DIFFICULTY_SELECT stage)
-enum State { MENU, DIFFICULTY_SELECT, GAME, GAME_OVER, WIN };
+// Added PAUSE to the game engine state list
+enum State { MENU, DIFFICULTY_SELECT, GAME, PAUSE, GAME_OVER, WIN };
 State gameState = MENU;
 
 const int WINDOW_WIDTH = 800;
@@ -58,22 +58,24 @@ const int WINDOW_HEIGHT = 600;
 
 int mouseX = 0, mouseY = 0;
 
-// Button Coordinates & Offsets
 const int BTN_WIDTH = 200;
 const int BTN_HEIGHT = 50;
 const int START_BTN_Y = 250;
 const int EXIT_BTN_Y = 170;
 const int RESTART_BTN_Y = 200;
 
-// Difficulty Specific Button Positions
 const int EASY_BTN_Y = 320;
 const int MEDIUM_BTN_Y = 240;
 const int HARD_BTN_Y = 160;
 
-// Map Setup (0: Empty, 1: Wall, 2: Dot, 3: 'A', 4: 'T', 5: 'G', 6: 'C')
-const int MAP_ROWS = 15;
-const int MAP_COLS = 19;
-int initialMaze[MAP_ROWS][MAP_COLS] = {
+// Dynamic Pause Button Coordinates
+const int PAUSE_RESTART_Y = 330;
+const int PAUSE_MENU_Y = 250;
+const int PAUSE_EXIT_Y = 170;
+
+// "semiMediumaze" -- Briti
+// "semiHardmaze" -- Shoumya
+vector<vector<int>> initialMaze = {
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
     {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
     {1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1},
@@ -90,34 +92,70 @@ int initialMaze[MAP_ROWS][MAP_COLS] = {
     {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
-int mediumMaze[MAP_ROWS][MAP_COLS] = {
+
+vector<vector<int>> mediumMaze = {
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-    {1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1},
-    // ... 
+    {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1},
+    {1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1},
+    {1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1},
+    {1,1,1,1,2,1,1,1,0,0,0,1,1,1,2,1,1,1,1},
+    {1,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,1},
+    {1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1},
+    {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1},
+    {1,2,2,1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,1},
+    {1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
 
-int hardMaze[MAP_ROWS][MAP_COLS] = {
-    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-    {1,0,1,0,1,0,1,0,0,1,0,0,1,0,1,0,1,0,1},
-    // ... 
+vector<vector<int>> hardMazeTemplate = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,2,2,2,2,2,2,2,2,2,1,2,1,2,1,2,1,2,1,2,1,2,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,1,1,1,1,1,2,1,2,1,2,1,2,1,2,1,2,1,1,1,1,1,1,1,1,1,2,1},
+    {1,2,1,2,2,2,2,2,1,2,1,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,1},
+    {1,2,1,2,1,1,1,2,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,2,1},
+    {1,2,1,2,1,2,1,2,1,2,2,2,2,2,1,2,1,2,2,2,2,2,1,2,2,2,1,2,1,2,1},
+    {1,1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,2,1,1,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1},
+    {1,2,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,2,1},
+    {1,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1},
+    {1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,2,1,1,1,2,1,0,0,0,0,0,1,2,1,1,1,2,1,1,1,1,1,1,1},
+    {1,2,2,2,2,2,1,2,2,2,1,2,1,2,2,2,2,2,1,2,1,2,2,2,1,2,2,2,2,2,1},
+    {1,2,1,1,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,1,1,2,1},
+    {1,2,1,2,2,2,2,2,2,2,2,2,2,2,1,2,1,2,2,2,2,2,2,2,2,2,1,2,1,2,1},
+    {1,2,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,2,1,2,1,2,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,1},
+    {1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,1,2,2,2,2,2,2,2,2,2,1,2,2,2,1},
+    {1,2,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1,2,1,1,1,1,1,1,1,2,1,2,1,2,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,1,2,1},
+    {1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,2,1,1,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
 
-int maze[MAP_ROWS][MAP_COLS];
+int MAP_ROWS = 15;
+int MAP_COLS = 19;
+vector<vector<int>> maze;
 
-const int TILE_SIZE = 30;
-const int MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
-const int MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
+const int TILE_SIZE = 18;
+int MAP_OFFSET_X;
+int MAP_OFFSET_Y;
 
-// Game Elements
 float dnamanX, dnamanY;
-float dnamanSpeed = 0.09f;
+float dnamanSpeed = 0.12f;
 int dirX = 0, dirY = 0;
 int nextDirX = 0, nextDirY = 0;
 int score = 0;
 int lives = 5;
 
-std::string targetSequence = "";
-std::string collectedSequence = "";
+string targetSequence = "";
+string collectedSequence = "";
 char nucChars[4] = { 'A', 'T', 'G', 'C' };
 
 struct Ghost {
@@ -125,14 +163,14 @@ struct Ghost {
     float r, g, b;
     float speed;
 };
-std::vector<Ghost> enzymes;
+vector<Ghost> enzymes;
 
 struct Point { int x, y; };
 
 void resetGame();
 bool isWall(float x, float y);
 
-void drawText(int x, int y, std::string text, void* font = GLUT_BITMAP_HELVETICA_18) {
+void drawText(int x, int y, string text, void* font = GLUT_BITMAP_HELVETICA_18) {
     glRasterPos2i(x, y);
     for (char c : text) glutBitmapCharacter(font, c);
 }
@@ -142,11 +180,12 @@ bool isMouseOverButton(int bx, int by, int bw, int bh) {
 }
 
 bool isTileReachable(int targetX, int targetY) {
-    if (initialMaze[targetY][targetX] == 1) return false;
-    int startX = 9, startY = 7;
+    if (maze[targetY][targetX] == 1) return false;
+    int startX = (int)dnamanX;
+    int startY = (int)dnamanY;
     if (startX == targetX && startY == targetY) return true;
 
-    bool visited[MAP_ROWS][MAP_COLS] = { false };
+    vector<vector<bool>> visited(MAP_ROWS, vector<bool>(MAP_COLS, false));
     std::queue<Point> q;
 
     q.push({ startX, startY });
@@ -168,7 +207,7 @@ bool isTileReachable(int targetX, int targetY) {
             int ny = curr.y + dy[i];
 
             if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS) {
-                if (!visited[ny][nx] && initialMaze[ny][nx] != 1) {
+                if (!visited[ny][nx] && maze[ny][nx] != 1) {
                     visited[ny][nx] = true;
                     q.push({ nx, ny });
                 }
@@ -210,8 +249,8 @@ void drawHeart(int cx, int cy, int size) {
 Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
     if (startX == targetX && startY == targetY) return { 0, 0 };
 
-    bool visited[MAP_ROWS][MAP_COLS] = { false };
-    Point parent[MAP_ROWS][MAP_COLS];
+    vector<vector<bool>> visited(MAP_ROWS, vector<bool>(MAP_COLS, false));
+    vector<vector<Point>> parent(MAP_ROWS, vector<Point>(MAP_COLS));
 
     std::queue<Point> q;
     q.push({ startX, startY });
@@ -235,7 +274,7 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
             int ny = curr.y + dy[i];
 
             if (nx >= 0 && nx < MAP_COLS && ny >= 0 && ny < MAP_ROWS) {
-                if (!visited[ny][nx] && initialMaze[ny][nx] != 1) {
+                if (!visited[ny][nx] && maze[ny][nx] != 1) {
                     visited[ny][nx] = true;
                     parent[ny][nx] = curr;
                     q.push({ nx, ny });
@@ -257,34 +296,34 @@ void resetGame() {
     score = 0;
     lives = (currentDifficulty == EASY) ? 5 : (currentDifficulty == MEDIUM ? 3 : 2);
     collectedSequence = "";
-    dnamanX = 9.0f;
-    dnamanY = 7.0f;
     dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
-    // 1. Point to the correct source matrix based on selected level
-    int (*selectedSourceMaze)[MAP_COLS] = mediumMaze; // Default fallback
-
+    vector<vector<int>> selectedSourceMaze;
     if (currentDifficulty == EASY) {
         selectedSourceMaze = initialMaze;
+        dnamanX = 9.0f; dnamanY = 7.0f;
     }
     else if (currentDifficulty == MEDIUM) {
         selectedSourceMaze = mediumMaze;
+        dnamanX = 9.0f; dnamanY = 7.0f;
     }
     else if (currentDifficulty == HARD) {
-        selectedSourceMaze = hardMaze;
+        selectedSourceMaze = hardMazeTemplate;
+        dnamanX = 15.0f; dnamanY = 12.0f;
     }
 
-    // 2. Copy the chosen layout into the active simulation maze array
-    for (int r = 0; r < MAP_ROWS; r++) {
-        for (int c = 0; c < MAP_COLS; c++) {
-            maze[r][c] = selectedSourceMaze[r][c];
-        }
-    }
+    MAP_ROWS = selectedSourceMaze.size();
+    MAP_COLS = selectedSourceMaze[0].size();
 
- //----------   // --- NEW: Scale DNA Target Sequence Length based on difficulty --- TASKS
- //----------   // --- NEW: Scale Enzyme (Ghost) Movement Speed --- TASKS
+    MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
+    MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
 
-    int seqLength = 5 + (rand() % 2);
+    maze = selectedSourceMaze;
+
+    int seqLength = 4;
+    if (currentDifficulty == MEDIUM) seqLength = 6;
+    else if (currentDifficulty == HARD) seqLength = 8;
+
     targetSequence = "";
     for (int i = 0; i < seqLength; i++) {
         char nuc = nucChars[rand() % 4];
@@ -292,19 +331,22 @@ void resetGame() {
         spawnNucleotideOnMap(nuc);
     }
 
-    float baselineSpeed = 0.025f;
+    float baselineSpeed = 0.02f;
+    if (currentDifficulty == MEDIUM) baselineSpeed = 0.04f;
+    else if (currentDifficulty == HARD) baselineSpeed = 0.06f;
+
     enzymes.clear();
     enzymes.push_back({ 1.0f,  1.0f,   1.0f, 0.2f, 0.2f, baselineSpeed });
-    enzymes.push_back({ 1.0f,  13.0f,  0.2f, 0.9f, 0.2f, baselineSpeed });
-    enzymes.push_back({ 17.0f, 13.0f,  1.0f, 0.5f, 0.0f, baselineSpeed });
+    enzymes.push_back({ 1.0f,  (float)(MAP_ROWS - 2),  0.2f, 0.9f, 0.2f, baselineSpeed });
+    enzymes.push_back({ (float)(MAP_COLS - 2), (float)(MAP_ROWS - 2),  1.0f, 0.5f, 0.0f, baselineSpeed });
 }
 
 void renderMenu() {
     glClear(GL_COLOR_BUFFER_BIT);
     glColor3f(1.0f, 1.0f, 0.0f);
-    drawText(WINDOW_WIDTH / 2 - 120, 450, "ENZYME PAC-MAN", GLUT_BITMAP_TIMES_ROMAN_24);
+    drawText(WINDOW_WIDTH / 2 - 120, 450, "DNA-man", GLUT_BITMAP_TIMES_ROMAN_24);
     glColor3f(0.4f, 0.8f, 1.0f);
-    drawText(WINDOW_WIDTH / 2 - 145, 410, "Sequence Protein Synthesis Mode", GLUT_BITMAP_HELVETICA_12);
+    drawText(WINDOW_WIDTH / 2 - 145, 410, "Nucleotides Sequencer Maze Arcade", GLUT_BITMAP_HELVETICA_12);
 
     int startBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
     glColor3f(isMouseOverButton(startBtnX, START_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.2f, 0.5f);
@@ -321,7 +363,6 @@ void renderMenu() {
     glutSwapBuffers();
 }
 
-// Intermediate Screen View Implementation
 void renderDifficultySelect() {
     glClear(GL_COLOR_BUFFER_BIT);
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -329,19 +370,16 @@ void renderDifficultySelect() {
 
     int btnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
 
-    // Easy Button
     glColor3f(isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.6f, 0.2f);
     glRecti(btnX, EASY_BTN_Y, btnX + BTN_WIDTH, EASY_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 75, EASY_BTN_Y + 18, "EASY");
 
-    // Medium Button
     glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.4f, 0.1f);
     glRecti(btnX, MEDIUM_BTN_Y, btnX + BTN_WIDTH, MEDIUM_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 60, MEDIUM_BTN_Y + 18, "MEDIUM");
 
-    // Hard Button
     glColor3f(isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.7f : 0.5f, 0.1f, 0.1f);
     glRecti(btnX, HARD_BTN_Y, btnX + BTN_WIDTH, HARD_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -380,8 +418,10 @@ void renderGame() {
             else if (maze[r][c] == 2) {
                 glColor3f(0.7f, 0.7f, 0.7f);
                 glBegin(GL_QUADS);
-                glVertex2i(x + 13, y + 13); glVertex2i(x + 17, y + 13);
-                glVertex2i(x + 17, y + 17); glVertex2i(x + 13, y + 17);
+                glVertex2i(x + TILE_SIZE / 2 - 2, y + TILE_SIZE / 2 - 2);
+                glVertex2i(x + TILE_SIZE / 2 + 2, y + TILE_SIZE / 2 - 2);
+                glVertex2i(x + TILE_SIZE / 2 + 2, y + TILE_SIZE / 2 + 2);
+                glVertex2i(x + TILE_SIZE / 2 - 2, y + TILE_SIZE / 2 + 2);
                 glEnd();
             }
             else if (maze[r][c] >= 3 && maze[r][c] <= 6) {
@@ -392,14 +432,14 @@ void renderGame() {
                 else if (letter == 'C') glColor3f(1.0f, 0.4f, 1.0f);
 
                 glBegin(GL_LINE_LOOP);
-                glVertex2i(x + 4, y + 4);
-                glVertex2i(x + TILE_SIZE - 4, y + 4);
-                glVertex2i(x + TILE_SIZE - 4, y + TILE_SIZE - 4);
-                glVertex2i(x + 4, y + TILE_SIZE - 4);
+                glVertex2i(x + 2, y + 2);
+                glVertex2i(x + TILE_SIZE - 2, y + 2);
+                glVertex2i(x + TILE_SIZE - 2, y + TILE_SIZE - 2);
+                glVertex2i(x + 2, y + TILE_SIZE - 2);
                 glEnd();
 
                 std::string s(1, letter);
-                drawText(x + 10, y + 9, s, GLUT_BITMAP_HELVETICA_12);
+                drawText(x + TILE_SIZE / 2 - 4, y + TILE_SIZE / 2 - 4, s, GLUT_BITMAP_HELVETICA_10);
             }
         }
     }
@@ -411,7 +451,7 @@ void renderGame() {
     glVertex2i(pacX, pacY);
     for (int i = 0; i <= 360; i += 15) {
         float rad = i * 3.14159f / 180.0f;
-        glVertex2f(pacX + cos(rad) * 12, pacY + sin(rad) * 12);
+        glVertex2f(pacX + cos(rad) * (TILE_SIZE / 2 - 1), pacY + sin(rad) * (TILE_SIZE / 2 - 1));
     }
     glEnd();
 
@@ -424,11 +464,43 @@ void renderGame() {
         glVertex2i(gx, gy);
         for (int i = 0; i <= 180; i += 15) {
             float rad = i * 3.14159f / 180.0f;
-            glVertex2f(gx + cos(rad) * 12, gy + sin(rad) * 12);
+            glVertex2f(gx + cos(rad) * (TILE_SIZE / 2 - 1), gy + sin(rad) * (TILE_SIZE / 2 - 1));
         }
         glEnd();
-        glRecti(gx - 12, gy - 12, gx + 12, gy);
+        glRecti(gx - (TILE_SIZE / 2 - 1), gy - (TILE_SIZE / 2 - 1), gx + (TILE_SIZE / 2 - 1), gy);
     }
+
+    glutSwapBuffers();
+}
+
+// Added option interface layer for the execution break state
+void renderPauseMenu() {
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glColor3f(1.0f, 0.84f, 0.0f);
+    drawText(WINDOW_WIDTH / 2 - 75, 450, "GAME PAUSED", GLUT_BITMAP_TIMES_ROMAN_24);
+    glColor3f(0.6f, 0.6f, 0.6f);
+    drawText(WINDOW_WIDTH / 2 - 105, 415, "Press 'ESC' to resume simulation", GLUT_BITMAP_HELVETICA_12);
+
+    int btnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
+
+    // Restart Button Setup
+    glColor3f(isMouseOverButton(btnX, PAUSE_RESTART_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.5f, 0.2f);
+    glRecti(btnX, PAUSE_RESTART_Y, btnX + BTN_WIDTH, PAUSE_RESTART_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 55, PAUSE_RESTART_Y + 18, "RESTART");
+
+    // Main Menu Return Button Setup
+    glColor3f(isMouseOverButton(btnX, PAUSE_MENU_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.3f, 0.6f);
+    glRecti(btnX, PAUSE_MENU_Y, btnX + BTN_WIDTH, PAUSE_MENU_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 70, PAUSE_MENU_Y + 18, "MENU");
+
+    // Close Game/Exit Button Setup
+    glColor3f(isMouseOverButton(btnX, PAUSE_EXIT_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.4f, 0.1f, 0.1f);
+    glRecti(btnX, PAUSE_EXIT_Y, btnX + BTN_WIDTH, PAUSE_EXIT_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 75, PAUSE_EXIT_Y + 18, "EXIT");
 
     glutSwapBuffers();
 }
@@ -459,6 +531,7 @@ void display() {
     if (gameState == MENU) renderMenu();
     else if (gameState == DIFFICULTY_SELECT) renderDifficultySelect();
     else if (gameState == GAME) renderGame();
+    else if (gameState == PAUSE) renderPauseMenu(); // Route logic tree block here
     else if (gameState == GAME_OVER) renderGameOver(false);
     else if (gameState == WIN) renderGameOver(true);
 }
@@ -467,7 +540,7 @@ bool isWall(float x, float y) {
     int cellX = (int)floor(x + 0.5f);
     int cellY = (int)floor(y + 0.5f);
     if (cellX < 0 || cellX >= MAP_COLS || cellY < 0 || cellY >= MAP_ROWS) return true;
-    return (initialMaze[cellY][cellX] == 1);
+    return (maze[cellY][cellX] == 1);
 }
 
 void update(int value) {
@@ -541,12 +614,17 @@ void update(int value) {
                     spawnNucleotideOnMap(removed);
                 }
 
-                dnamanX = 9.0f; dnamanY = 7.0f;
+                if (currentDifficulty == HARD) {
+                    dnamanX = 15.0f; dnamanY = 12.0f;
+                }
+                else {
+                    dnamanX = 9.0f; dnamanY = 7.0f;
+                }
                 dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
                 enzymes[0].x = 1.0f;  enzymes[0].y = 1.0f;
-                enzymes[1].x = 1.0f;  enzymes[1].y = 13.0f;
-                enzymes[2].x = 17.0f; enzymes[2].y = 13.0f;
+                enzymes[1].x = 1.0f;  enzymes[1].y = (float)(MAP_ROWS - 2);
+                enzymes[2].x = (float)(MAP_COLS - 2); enzymes[2].y = (float)(MAP_ROWS - 2);
                 break;
             }
         }
@@ -554,6 +632,18 @@ void update(int value) {
 
     glutPostRedisplay();
     glutTimerFunc(16, update, 0);
+}
+
+// Added basic ASCII processor function for capturing Esc mechanics
+void keyboardKeys(unsigned char key, int x, int y) {
+    if (key == 27) { // 27 matches the default ASCII Esc key map assignment
+        if (gameState == GAME) {
+            gameState = PAUSE;
+        }
+        else if (gameState == PAUSE) {
+            gameState = GAME;
+        }
+    }
 }
 
 void specialKeys(int key, int x, int y) {
@@ -573,7 +663,7 @@ void passiveMouse(int x, int y) {
     mouseX = (int)(((float)x / currentWidth) * WINDOW_WIDTH);
     mouseY = (int)(((float)(currentHeight - y) / currentHeight) * WINDOW_HEIGHT);
 
-    if (gameState == MENU || gameState == DIFFICULTY_SELECT || gameState == GAME_OVER || gameState == WIN) {
+    if (gameState == MENU || gameState == DIFFICULTY_SELECT || gameState == PAUSE || gameState == GAME_OVER || gameState == WIN) {
         glutPostRedisplay();
     }
 }
@@ -589,7 +679,6 @@ void mouseClicks(int button, int state, int x, int y) {
 
         if (gameState == MENU) {
             if (isMouseOverButton(btnX, START_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                // Instantly transitions to the new difficulty setup window
                 gameState = DIFFICULTY_SELECT;
             }
             else if (isMouseOverButton(btnX, EXIT_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
@@ -613,9 +702,21 @@ void mouseClicks(int button, int state, int x, int y) {
                 gameState = GAME;
             }
         }
+        // Added Pause tracking handlers
+        else if (gameState == PAUSE) {
+            if (isMouseOverButton(btnX, PAUSE_RESTART_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                resetGame();
+                gameState = GAME;
+            }
+            else if (isMouseOverButton(btnX, PAUSE_MENU_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                gameState = MENU;
+            }
+            else if (isMouseOverButton(btnX, PAUSE_EXIT_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                glutLeaveMainLoop();
+            }
+        }
         else if (gameState == GAME_OVER || gameState == WIN) {
             if (isMouseOverButton(btnX, RESTART_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
-                // Sending players straight back to selection options on loop restart
                 gameState = DIFFICULTY_SELECT;
                 startBackgroundMusic();
             }
@@ -636,12 +737,13 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     glutInitWindowPosition(100, 100);
-    glutCreateWindow("Bio-Sequence Pac-Man");
+    glutCreateWindow("DNA-man");
 
     init();
     startBackgroundMusic();
 
     glutDisplayFunc(display);
+    glutKeyboardFunc(keyboardKeys); // Registered keyboard listener function block here
     glutSpecialFunc(specialKeys);
     glutMouseFunc(mouseClicks);
     glutPassiveMotionFunc(passiveMouse);
