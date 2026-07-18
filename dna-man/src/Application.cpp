@@ -46,15 +46,15 @@ void playResurrectionSound() {
 #endif
 }
 
-enum Difficulty { EASY, MEDIUM, HARD };
+enum Difficulty { EASY, MEDIUM, HARD, BRUTAL };
 Difficulty currentDifficulty = EASY;
 
 // Added PAUSE to the game engine state list
 enum State { MENU, DIFFICULTY_SELECT, GAME, PAUSE, GAME_OVER, WIN };
 State gameState = MENU;
 
-const int WINDOW_WIDTH = 800;
-const int WINDOW_HEIGHT = 600;
+const int WINDOW_WIDTH = 900;
+const int WINDOW_HEIGHT = 700;
 
 int mouseX = 0, mouseY = 0;
 
@@ -67,6 +67,7 @@ const int RESTART_BTN_Y = 200;
 const int EASY_BTN_Y = 320;
 const int MEDIUM_BTN_Y = 240;
 const int HARD_BTN_Y = 160;
+const int BRUTAL_BTN_Y = 80;
 
 // Dynamic Pause Button Coordinates
 const int PAUSE_RESTART_Y = 330;
@@ -137,6 +138,40 @@ vector<vector<int>> hardMazeTemplate = {
     {1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,2,1,1,1},
     {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+};
+
+std::vector<std::vector<int>> BrutalMazeTemplate = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1},
+    {1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1},
+    {1,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,1},
+    {1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1},
+    {1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,1},
+    {1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,2,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,1},
+    {1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,2,1,2,1},
+    {1,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,1},
+    {1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1,1,1,2,1},
+    {1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1},
+    {1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1},
+    {1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,2,1},
+    {1,2,1,2,2,2,1,2,1,2,2,2,1,2,2,2,1,2,1,2,2,2,1,2,2,2,1,2,1,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,1},
+    {1,2,1,2,1,2,1,2,1,1,1,2,1,2,1,1,1,2,1,2,1,1,1,2,1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,2,1,2,1},
+    {1,2,2,2,1,2,2,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,2,1,1,1,1,1},
+    {1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,1},
+    {1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1},
+    {1,2,1,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,1},
+    {1,2,1,2,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,1,2,1,1,1,1,1,2,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,1},
+    {1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1,2,1},
+    {1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,1},
+    {1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1},
+    {1,2,1,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,2,1},
+    {1,2,1,2,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1,2,1},
+    {1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
 };
 
 int MAP_ROWS = 15;
@@ -294,7 +329,7 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
 
 void resetGame() {
     score = 0;
-    lives = (currentDifficulty == EASY) ? 5 : (currentDifficulty == MEDIUM ? 3 : 2);
+    lives = (currentDifficulty == EASY) ? 5: (currentDifficulty == MEDIUM ? 3 : (currentDifficulty == HARD ? 2 : 1));
     collectedSequence = "";
     dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
@@ -311,6 +346,10 @@ void resetGame() {
         selectedSourceMaze = hardMazeTemplate;
         dnamanX = 15.0f; dnamanY = 12.0f;
     }
+    else if (currentDifficulty == BRUTAL) {
+        selectedSourceMaze = BrutalMazeTemplate;
+        dnamanX = 17.0f; dnamanY = 15.0f;
+    }
 
     MAP_ROWS = selectedSourceMaze.size();
     MAP_COLS = selectedSourceMaze[0].size();
@@ -323,6 +362,7 @@ void resetGame() {
     int seqLength = 4;
     if (currentDifficulty == MEDIUM) seqLength = 6;
     else if (currentDifficulty == HARD) seqLength = 8;
+    else if (currentDifficulty == BRUTAL) seqLength = 12;
 
     targetSequence = "";
     for (int i = 0; i < seqLength; i++) {
@@ -334,10 +374,12 @@ void resetGame() {
     float baselineSpeed = 0.02f;
     if (currentDifficulty == MEDIUM) baselineSpeed = 0.04f;
     else if (currentDifficulty == HARD) baselineSpeed = 0.06f;
+    else if (currentDifficulty == BRUTAL) baselineSpeed = 0.10f;
 
     enzymes.clear();
     enzymes.push_back({ 1.0f,  1.0f,   1.0f, 0.2f, 0.2f, baselineSpeed });
     enzymes.push_back({ 1.0f,  (float)(MAP_ROWS - 2),  0.2f, 0.9f, 0.2f, baselineSpeed });
+    enzymes.push_back({ (float)(MAP_COLS - 2), (float)(MAP_ROWS - 2),  1.0f, 0.5f, 0.0f, baselineSpeed });
     enzymes.push_back({ (float)(MAP_COLS - 2), (float)(MAP_ROWS - 2),  1.0f, 0.5f, 0.0f, baselineSpeed });
 }
 
@@ -370,20 +412,25 @@ void renderDifficultySelect() {
 
     int btnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
 
-    glColor3f(isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.6f, 0.2f);
+    glColor3f(isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.7f, 0.2f);
     glRecti(btnX, EASY_BTN_Y, btnX + BTN_WIDTH, EASY_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 75, EASY_BTN_Y + 18, "EASY");
 
-    glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.4f, 0.1f);
+    glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.5f, 0.1f);
     glRecti(btnX, MEDIUM_BTN_Y, btnX + BTN_WIDTH, MEDIUM_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 60, MEDIUM_BTN_Y + 18, "MEDIUM");
 
-    glColor3f(isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.7f : 0.5f, 0.1f, 0.1f);
+    glColor3f(isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.7f : 0.5f, 0.3f, 0.1f);
     glRecti(btnX, HARD_BTN_Y, btnX + BTN_WIDTH, HARD_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 75, HARD_BTN_Y + 18, "HARD");
+
+    glColor3f(isMouseOverButton(btnX, BRUTAL_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.8f : 0.5f, 0.1f, 0.1f);
+    glRecti(btnX, BRUTAL_BTN_Y, btnX + BTN_WIDTH, BRUTAL_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 75, BRUTAL_BTN_Y + 18, "BRUTAL");
 
     glutSwapBuffers();
 }
@@ -698,6 +745,11 @@ void mouseClicks(int button, int state, int x, int y) {
             }
             else if (isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 currentDifficulty = HARD;
+                resetGame();
+                gameState = GAME;   
+            }
+            else if (isMouseOverButton(btnX, BRUTAL_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                currentDifficulty = BRUTAL;
                 resetGame();
                 gameState = GAME;
             }
