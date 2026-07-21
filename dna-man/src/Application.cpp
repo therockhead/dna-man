@@ -46,7 +46,7 @@ void playResurrectionSound() {
 #endif
 }
 
-enum Difficulty { EASY, MEDIUM, HARD, BRUTAL };
+enum Difficulty { EASY, SEMI_MEDIUM, MEDIUM, HARD, BRUTAL };
 Difficulty currentDifficulty = EASY;
 
 // Added PAUSE to the game engine state list
@@ -64,9 +64,10 @@ const int START_BTN_Y = 250;
 const int EXIT_BTN_Y = 170;
 const int RESTART_BTN_Y = 200;
 
-const int EASY_BTN_Y = 320;
-const int MEDIUM_BTN_Y = 240;
-const int HARD_BTN_Y = 160;
+const int EASY_BTN_Y = 340;
+const int SEMI_MEDIUM_BTN_Y = 275;
+const int MEDIUM_BTN_Y = 210;
+const int HARD_BTN_Y = 145;
 const int BRUTAL_BTN_Y = 80;
 
 // Dynamic Pause Button Coordinates
@@ -87,6 +88,24 @@ vector<vector<int>> initialMaze = {
     {0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0},
     {1,1,1,1,2,1,0,1,1,0,1,1,0,1,2,1,1,1,1},
     {1,2,2,2,2,2,2,1,0,0,0,1,2,2,2,2,2,2,1},
+    {1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1},
+    {1,2,2,1,2,1,2,2,2,2,2,2,2,1,2,1,2,2,1},
+    {1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1},
+    {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+};
+
+vector<vector<int>> semimediumMaze = {
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1},
+    {1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1},
+    {1,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,1},
+    {1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1},
+    {1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1},
+    {1,1,1,1,2,1,1,1,0,1,0,1,1,1,2,1,1,1,1},
+    {0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0},
+    {1,1,1,1,2,1,0,1,1,0,1,1,0,1,2,1,1,1,1},
+    {1,2,1,2,2,2,2,1,0,0,0,1,2,2,2,2,1,2,1},
     {1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1},
     {1,2,2,1,2,1,2,2,2,2,2,2,2,1,2,1,2,2,1},
     {1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1},
@@ -329,13 +348,17 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
 
 void resetGame() {
     score = 0;
-    lives = (currentDifficulty == EASY) ? 5: (currentDifficulty == MEDIUM ? 3 : (currentDifficulty == HARD ? 2 : 1));
+    lives = (currentDifficulty == EASY) ? 5 : (currentDifficulty == SEMI_MEDIUM ? 4 : (currentDifficulty == MEDIUM ? 3 : (currentDifficulty == HARD ? 2 : 1)));
     collectedSequence = "";
     dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
     vector<vector<int>> selectedSourceMaze;
     if (currentDifficulty == EASY) {
         selectedSourceMaze = initialMaze;
+        dnamanX = 9.0f; dnamanY = 7.0f;
+    }
+    else if (currentDifficulty == SEMI_MEDIUM) {
+        selectedSourceMaze = semimediumMaze;
         dnamanX = 9.0f; dnamanY = 7.0f;
     }
     else if (currentDifficulty == MEDIUM) {
@@ -360,7 +383,8 @@ void resetGame() {
     maze = selectedSourceMaze;
 
     int seqLength = 4;
-    if (currentDifficulty == MEDIUM) seqLength = 6;
+    if (currentDifficulty == SEMI_MEDIUM) seqLength = 5;
+    else if (currentDifficulty == MEDIUM) seqLength = 6;
     else if (currentDifficulty == HARD) seqLength = 8;
     else if (currentDifficulty == BRUTAL) seqLength = 12;
 
@@ -372,7 +396,8 @@ void resetGame() {
     }
 
     float baselineSpeed = 0.02f;
-    if (currentDifficulty == MEDIUM) baselineSpeed = 0.04f;
+    if (currentDifficulty == SEMI_MEDIUM) baselineSpeed = 0.03f;
+    else if (currentDifficulty == MEDIUM) baselineSpeed = 0.04f;
     else if (currentDifficulty == HARD) baselineSpeed = 0.06f;
     else if (currentDifficulty == BRUTAL) baselineSpeed = 0.10f;
 
@@ -416,6 +441,11 @@ void renderDifficultySelect() {
     glRecti(btnX, EASY_BTN_Y, btnX + BTN_WIDTH, EASY_BTN_Y + BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(btnX + 75, EASY_BTN_Y + 18, "EASY");
+
+    glColor3f(isMouseOverButton(btnX, SEMI_MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.5f : 0.4f, 0.6f, 0.15f);
+    glRecti(btnX, SEMI_MEDIUM_BTN_Y, btnX + BTN_WIDTH, SEMI_MEDIUM_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(btnX + 35, SEMI_MEDIUM_BTN_Y + 18, "SEMI-MEDIUM");
 
     glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.5f, 0.1f);
     glRecti(btnX, MEDIUM_BTN_Y, btnX + BTN_WIDTH, MEDIUM_BTN_Y + BTN_HEIGHT);
@@ -738,6 +768,11 @@ void mouseClicks(int button, int state, int x, int y) {
                 resetGame();
                 gameState = GAME;
             }
+            else if (isMouseOverButton(btnX, SEMI_MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                currentDifficulty = SEMI_MEDIUM;
+                resetGame();
+                gameState = GAME;
+            }
             else if (isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 currentDifficulty = MEDIUM;
                 resetGame();
@@ -746,7 +781,7 @@ void mouseClicks(int button, int state, int x, int y) {
             else if (isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 currentDifficulty = HARD;
                 resetGame();
-                gameState = GAME;   
+                gameState = GAME;
             }
             else if (isMouseOverButton(btnX, BRUTAL_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 currentDifficulty = BRUTAL;
