@@ -23,7 +23,7 @@ void startBackgroundMusic() {
 
 void playEatSound() {
 #ifdef _WIN32
-    mciSendString(TEXT("close ch1"), NULL, 0, NULL);
+    //mciSendString(TEXT("close ch1"), NULL, 0, NULL);
     mciSendString(TEXT("open \"audio/coin_earn.wav\" type waveaudio alias ch1"), NULL, 0, NULL);
     mciSendString(TEXT("play ch1 from 0"), NULL, 0, NULL);
 #endif
@@ -32,7 +32,7 @@ void playEatSound() {
 void playGameOverSound() {
 #ifdef _WIN32
     PlaySound(NULL, 0, 0);
-    mciSendString(TEXT("close ch2"), NULL, 0, NULL);
+    //mciSendString(TEXT("close ch2"), NULL, 0, NULL);
     mciSendString(TEXT("open \"audio/game_over.wav\" type waveaudio alias ch2"), NULL, 0, NULL);
     mciSendString(TEXT("play ch2 from 0"), NULL, 0, NULL);
 #endif
@@ -40,11 +40,13 @@ void playGameOverSound() {
 
 void playResurrectionSound() {
 #ifdef _WIN32
-    mciSendString(TEXT("close ch3"), NULL, 0, NULL);
+    //mciSendString(TEXT("close ch3"), NULL, 0, NULL);
     mciSendString(TEXT("open \"audio/resurrection_of_player.wav\" type waveaudio alias ch3"), NULL, 0, NULL);
     mciSendString(TEXT("play ch3 from 0"), NULL, 0, NULL);
 #endif
 }
+
+
 
 enum Difficulty { EASY, MEDIUM, HARD, BRUTAL };
 Difficulty currentDifficulty = EASY;
@@ -53,8 +55,8 @@ Difficulty currentDifficulty = EASY;
 enum State { MENU, DIFFICULTY_SELECT, GAME, PAUSE, GAME_OVER, WIN };
 State gameState = MENU;
 
-const int WINDOW_WIDTH = 900;
-const int WINDOW_HEIGHT = 700;
+int WINDOW_WIDTH = 900;
+int WINDOW_HEIGHT = 700;
 
 int mouseX = 0, mouseY = 0;
 
@@ -178,7 +180,8 @@ int MAP_ROWS = 15;
 int MAP_COLS = 19;
 vector<vector<int>> maze;
 
-const int TILE_SIZE = 18;
+//const int TILE_SIZE = 18;
+int TILE_SIZE = 18;
 int MAP_OFFSET_X;
 int MAP_OFFSET_Y;
 
@@ -204,11 +207,55 @@ struct Point { int x, y; };
 
 void resetGame();
 bool isWall(float x, float y);
+//
+//
+//
+void updateLayout() {
+    const int MARGIN_X = 40;   // side padding
+    const int MARGIN_Y = 140;  // room for HUD text top/bottom
 
+    int maxTileW = (WINDOW_WIDTH - MARGIN_X) / MAP_COLS;
+    int maxTileH = (WINDOW_HEIGHT - MARGIN_Y) / MAP_ROWS;
+
+    TILE_SIZE = std::max(4, std::min(maxTileW, maxTileH)); // clamp so it never hits 0
+
+    MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
+    MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
+}
+
+void reshape(int w, int h) {
+    WINDOW_WIDTH = w;
+    WINDOW_HEIGHT = h;
+
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0, WINDOW_WIDTH, 0, WINDOW_HEIGHT);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // re-center the maze for the new window size
+    updateLayout();
+}
+//
+//
+//
 void drawText(int x, int y, string text, void* font = GLUT_BITMAP_HELVETICA_18) {
     glRasterPos2i(x, y);
     for (char c : text) glutBitmapCharacter(font, c);
 }
+
+//*****************************************************
+void drawStrokeText(float x, float y, string text, float scale = 0.25f, float lineWidth = 3.0f, void* font = GLUT_STROKE_MONO_ROMAN) {
+    glPushMatrix();
+    glTranslatef(x, y, 0);
+    glScalef(scale, scale, scale);
+    glLineWidth(lineWidth);
+    for (char c : text) glutStrokeCharacter(font, c);
+    glLineWidth(1.0f);
+    glPopMatrix();
+}
+//*****************************************************
 
 bool isMouseOverButton(int bx, int by, int bw, int bh) {
     return (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh);
@@ -351,11 +398,16 @@ void resetGame() {
         dnamanX = 17.0f; dnamanY = 15.0f;
     }
 
+    //MAP_ROWS = selectedSourceMaze.size();
+    //MAP_COLS = selectedSourceMaze[0].size();
+
+    //MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
+    //MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
+
     MAP_ROWS = selectedSourceMaze.size();
     MAP_COLS = selectedSourceMaze[0].size();
-
-    MAP_OFFSET_X = (WINDOW_WIDTH - (MAP_COLS * TILE_SIZE)) / 2;
-    MAP_OFFSET_Y = (WINDOW_HEIGHT - (MAP_ROWS * TILE_SIZE)) / 2 - 40;
+    maze = selectedSourceMaze;
+    updateLayout();
 
     maze = selectedSourceMaze;
 
@@ -384,11 +436,17 @@ void resetGame() {
 }
 
 void renderMenu() {
+    //glClear(GL_COLOR_BUFFER_BIT);
+    //glColor3f(1.0f, 1.0f, 0.0f);
+    //drawText(WINDOW_WIDTH / 2 - 65, WINDOW_HEIGHT / 2 + 100, "DNA-man", GLUT_BITMAP_TIMES_ROMAN_24);
+    //glColor3f(0.4f, 0.8f, 1.0f);
+    //drawText(WINDOW_WIDTH / 2 - 115, WINDOW_HEIGHT / 2 + 80, "Nucleotides Sequencer Maze Arcade", GLUT_BITMAP_HELVETICA_12);
+
     glClear(GL_COLOR_BUFFER_BIT);
     glColor3f(1.0f, 1.0f, 0.0f);
-    drawText(WINDOW_WIDTH / 2 - 120, 450, "DNA-man", GLUT_BITMAP_TIMES_ROMAN_24);
+    drawStrokeText(WINDOW_WIDTH / 2 - 128, 450, "DNA-man", 0.35f, 4.0f, GLUT_STROKE_MONO_ROMAN);
     glColor3f(0.4f, 0.8f, 1.0f);
-    drawText(WINDOW_WIDTH / 2 - 145, 410, "Nucleotides Sequencer Maze Arcade", GLUT_BITMAP_HELVETICA_12);
+    drawStrokeText(WINDOW_WIDTH / 2 - 176, 410, "Nucleotides Sequencer Maze Arcade", 0.13f, 1.5f, GLUT_STROKE_ROMAN);
 
     int startBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
     glColor3f(isMouseOverButton(startBtnX, START_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.2f, 0.5f);
@@ -790,6 +848,8 @@ int main(int argc, char** argv) {
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     glutInitWindowPosition(100, 100);
     glutCreateWindow("DNA-man");
+
+    glutReshapeFunc(reshape);
 
     init();
     startBackgroundMusic();
