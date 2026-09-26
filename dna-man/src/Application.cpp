@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <ctime>
 #include <queue>
+#include <algorithm>
+#include <fstream>
+#include <sstream>
 using namespace std;
 
 // audio integration
@@ -52,7 +55,7 @@ enum Difficulty { EASY, MEDIUM, HARD, BRUTAL };
 Difficulty currentDifficulty = EASY;
 
 // Added PAUSE to the game engine state list
-enum State { MENU, DIFFICULTY_SELECT, GAME, PAUSE, GAME_OVER, WIN };
+enum State { MENU, DIFFICULTY_SELECT, GAME, PAUSE, GAME_OVER, WIN, SCOREBOARD };
 State gameState = MENU;
 
 int WINDOW_WIDTH = 900;
@@ -63,13 +66,18 @@ int mouseX = 0, mouseY = 0;
 const int BTN_WIDTH = 200;
 const int BTN_HEIGHT = 50;
 const int START_BTN_Y = 250;
-const int EXIT_BTN_Y = 170;
+const int SCOREBOARD_BTN_Y = 170;
+const int EXIT_BTN_Y = 90;
 const int RESTART_BTN_Y = 200;
+const int SCOREBOARD_BACK_Y = 60;
 
-const int EASY_BTN_Y = 320;
-const int MEDIUM_BTN_Y = 240;
-const int HARD_BTN_Y = 160;
-const int BRUTAL_BTN_Y = 80;
+// Difficulty select: EASY+MEDIUM side by side, HARD+BRUTAL side by side below, BACK centered underneath.
+// Sized larger than the standard menu buttons, and centered on the window (computed at render/click time).
+const int DIFF_BTN_WIDTH = 260;
+const int DIFF_BTN_HEIGHT = 70;
+const int DIFF_BTN_GAP_X = 30;   // horizontal gap between paired buttons
+const int DIFF_ROW_GAP_Y = 20;   // vertical gap between the EASY/MEDIUM and HARD/BRUTAL rows
+const int DIFF_BACK_GAP_Y = 45;  // extra gap between the difficulty grid and BACK
 
 // Dynamic Pause Button Coordinates
 const int PAUSE_RESTART_Y = 330;
@@ -192,6 +200,53 @@ int nextDirX = 0, nextDirY = 0;
 int score = 0;
 int lives = 5;
 
+// Top 5 scores per difficulty level (indexed by the Difficulty enum), sorted highest first.
+vector<int> topScores[4];
+
+const string SCOREBOARD_FILE = "scoreboard.dat";
+
+// Returns the current #1 score for a difficulty, or 0 if it hasn't been played yet.
+int getTopScore(int diff) {
+    return topScores[diff].empty() ? 0 : topScores[diff][0];
+}
+
+// Writes topScores to disk: one line per difficulty, scores space-separated.
+void saveScoreboard() {
+    std::ofstream out(SCOREBOARD_FILE);
+    if (!out.is_open()) return;
+    for (int i = 0; i < 4; i++) {
+        for (size_t j = 0; j < topScores[i].size(); j++) {
+            out << topScores[i][j];
+            if (j + 1 < topScores[i].size()) out << ' ';
+        }
+        out << '\n';
+    }
+}
+
+// Loads topScores from disk at startup, if the file exists. Missing/corrupt file = start empty.
+void loadScoreboard() {
+    std::ifstream in(SCOREBOARD_FILE);
+    if (!in.is_open()) return;
+    string line;
+    for (int i = 0; i < 4 && std::getline(in, line); i++) {
+        topScores[i].clear();
+        std::istringstream iss(line);
+        int value;
+        while (iss >> value) topScores[i].push_back(value);
+    }
+}
+
+// Inserts the run's score into its level's top-5 list, if it makes the cut, keeping it sorted,
+// and persists the updated scoreboard to disk.
+void updateScoreboard() {
+    vector<int>& list = topScores[currentDifficulty];
+    list.push_back(score);
+    std::sort(list.begin(), list.end(), std::greater<int>());
+    if (list.size() > 5) list.resize(5);
+    saveScoreboard();
+}
+
+
 string targetSequence = "";
 string collectedSequence = "";
 char nucChars[4] = { 'A', 'T', 'G', 'C' };
@@ -245,6 +300,16 @@ void drawText(int x, int y, string text, void* font = GLUT_BITMAP_HELVETICA_18) 
     for (char c : text) glutBitmapCharacter(font, c);
 }
 
+// Draws text centered (both axes) inside a button rectangle, using GLUT's
+// own per-character width so it lines up precisely regardless of font size.
+void drawCenteredText(int bx, int by, int bw, int bh, string text, void* font = GLUT_BITMAP_TIMES_ROMAN_24) {
+    int textW = 0;
+    for (char c : text) textW += glutBitmapWidth(font, c);
+    int tx = bx + (bw - textW) / 2;
+    int ty = by + (bh - 24) / 2 + 6; // ~24px cap height for TIMES_ROMAN_24
+    drawText(tx, ty, text, font);
+}
+
 //*****************************************************
 void drawStrokeText(float x, float y, string text, float scale = 0.25f, float lineWidth = 3.0f, void* font = GLUT_STROKE_MONO_ROMAN) {
     glPushMatrix();
@@ -259,6 +324,22 @@ void drawStrokeText(float x, float y, string text, float scale = 0.25f, float li
 
 bool isMouseOverButton(int bx, int by, int bw, int bh) {
     return (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh);
+}
+
+// Computes the difficulty-select button positions, centered on the current
+// window size, so render and click-handling always agree.
+struct DiffLayout { int leftX, rightX, backX, row1Y, row2Y, backY; };
+DiffLayout getDifficultyLayout() {
+    DiffLayout L;
+    L.leftX = WINDOW_WIDTH / 2 - DIFF_BTN_GAP_X / 2 - DIFF_BTN_WIDTH;
+    L.rightX = WINDOW_WIDTH / 2 + DIFF_BTN_GAP_X / 2;
+    L.backX = (WINDOW_WIDTH - DIFF_BTN_WIDTH) / 2;
+
+    int centerY = WINDOW_HEIGHT / 2;
+    L.row1Y = centerY + DIFF_ROW_GAP_Y / 2;                          // EASY/MEDIUM, just above center
+    L.row2Y = centerY - DIFF_ROW_GAP_Y / 2 - DIFF_BTN_HEIGHT;        // HARD/BRUTAL, just below center
+    L.backY = L.row2Y - DIFF_BACK_GAP_Y - DIFF_BTN_HEIGHT;           // BACK, further below
+    return L;
 }
 
 bool isTileReachable(int targetX, int targetY) {
@@ -376,7 +457,7 @@ Point getBFSDirection(int startX, int startY, int targetX, int targetY) {
 
 void resetGame() {
     score = 0;
-    lives = (currentDifficulty == EASY) ? 5: (currentDifficulty == MEDIUM ? 3 : (currentDifficulty == HARD ? 2 : 1));
+    lives = (currentDifficulty == EASY) ? 5 : (currentDifficulty == MEDIUM ? 3 : (currentDifficulty == HARD ? 2 : 1));
     collectedSequence = "";
     dirX = 0; dirY = 0; nextDirX = 0; nextDirY = 0;
 
@@ -454,6 +535,12 @@ void renderMenu() {
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(startBtnX + 45, START_BTN_Y + 18, "START GAME");
 
+    int scoreboardBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
+    glColor3f(isMouseOverButton(scoreboardBtnX, SCOREBOARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.5f : 0.3f, 0.4f, 0.1f);
+    glRecti(scoreboardBtnX, SCOREBOARD_BTN_Y, scoreboardBtnX + BTN_WIDTH, SCOREBOARD_BTN_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(scoreboardBtnX + 35, SCOREBOARD_BTN_Y + 18, "SCOREBOARD");
+
     int exitBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
     glColor3f(isMouseOverButton(exitBtnX, EXIT_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.5f : 0.3f, 0.1f, 0.1f);
     glRecti(exitBtnX, EXIT_BTN_Y, exitBtnX + BTN_WIDTH, EXIT_BTN_Y + BTN_HEIGHT);
@@ -463,32 +550,76 @@ void renderMenu() {
     glutSwapBuffers();
 }
 
+// Draws the SCOREBOARD screen: top 5 scores for every difficulty level, in columns.
+void renderScoreboard() {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(WINDOW_WIDTH / 2 - 90, WINDOW_HEIGHT - 100, "SCOREBOARD", GLUT_BITMAP_TIMES_ROMAN_24);
+
+    const char* names[4] = { "EASY", "MEDIUM", "HARD", "BRUTAL" };
+    float colColors[4][3] = { {0.2f,0.9f,0.2f}, {0.9f,0.8f,0.2f}, {0.9f,0.5f,0.1f}, {0.9f,0.2f,0.2f} };
+
+    int colWidth = WINDOW_WIDTH / 4;
+    for (int col = 0; col < 4; col++) {
+        int colX = col * colWidth + colWidth / 2 - 50;
+        int topY = WINDOW_HEIGHT - 170;
+
+        glColor3f(colColors[col][0], colColors[col][1], colColors[col][2]);
+        drawText(colX, topY, names[col], GLUT_BITMAP_HELVETICA_18);
+
+        vector<int>& list = topScores[col];
+        for (int i = 0; i < 5; i++) {
+            string line = std::to_string(i + 1) + ". " + (i < (int)list.size() ? std::to_string(list[i]) : "---");
+            glColor3f(1.0f, 1.0f, 1.0f);
+            drawText(colX, topY - 30 - (i * 25), line, GLUT_BITMAP_HELVETICA_12);
+        }
+    }
+
+    int backBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
+    bool backHover = isMouseOverButton(backBtnX, SCOREBOARD_BACK_Y, BTN_WIDTH, BTN_HEIGHT);
+    glColor3f(backHover ? 0.4f : 0.25f, backHover ? 0.4f : 0.25f, backHover ? 0.4f : 0.25f);
+    glRecti(backBtnX, SCOREBOARD_BACK_Y, backBtnX + BTN_WIDTH, SCOREBOARD_BACK_Y + BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawText(backBtnX + 75, SCOREBOARD_BACK_Y + 18, "BACK");
+
+    glutSwapBuffers();
+}
+
 void renderDifficultySelect() {
     glClear(GL_COLOR_BUFFER_BIT);
     glColor3f(1.0f, 1.0f, 1.0f);
-    drawText(WINDOW_WIDTH / 2 - 140, 450, "SELECT GAME DIFFICULTY", GLUT_BITMAP_TIMES_ROMAN_24);
+    drawText(WINDOW_WIDTH / 2 - 140, WINDOW_HEIGHT - 120, "SELECT GAME DIFFICULTY", GLUT_BITMAP_TIMES_ROMAN_24);
 
-    int btnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
+    DiffLayout L = getDifficultyLayout();
 
-    glColor3f(isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.2f : 0.1f, 0.7f, 0.2f);
-    glRecti(btnX, EASY_BTN_Y, btnX + BTN_WIDTH, EASY_BTN_Y + BTN_HEIGHT);
+    // Row 1: EASY (left), MEDIUM (right)
+    glColor3f(isMouseOverButton(L.leftX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT) ? 0.2f : 0.1f, 0.7f, 0.2f);
+    glRecti(L.leftX, L.row1Y, L.leftX + DIFF_BTN_WIDTH, L.row1Y + DIFF_BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
-    drawText(btnX + 75, EASY_BTN_Y + 18, "EASY");
+    drawCenteredText(L.leftX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT, "EASY");
 
-    glColor3f(isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.6f : 0.5f, 0.5f, 0.1f);
-    glRecti(btnX, MEDIUM_BTN_Y, btnX + BTN_WIDTH, MEDIUM_BTN_Y + BTN_HEIGHT);
+    glColor3f(isMouseOverButton(L.rightX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT) ? 0.6f : 0.5f, 0.5f, 0.1f);
+    glRecti(L.rightX, L.row1Y, L.rightX + DIFF_BTN_WIDTH, L.row1Y + DIFF_BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
-    drawText(btnX + 60, MEDIUM_BTN_Y + 18, "MEDIUM");
+    drawCenteredText(L.rightX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT, "MEDIUM");
 
-    glColor3f(isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.7f : 0.5f, 0.3f, 0.1f);
-    glRecti(btnX, HARD_BTN_Y, btnX + BTN_WIDTH, HARD_BTN_Y + BTN_HEIGHT);
+    // Row 2: HARD (left), BRUTAL (right)
+    glColor3f(isMouseOverButton(L.leftX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT) ? 0.7f : 0.5f, 0.3f, 0.1f);
+    glRecti(L.leftX, L.row2Y, L.leftX + DIFF_BTN_WIDTH, L.row2Y + DIFF_BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
-    drawText(btnX + 75, HARD_BTN_Y + 18, "HARD");
+    drawCenteredText(L.leftX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT, "HARD");
 
-    glColor3f(isMouseOverButton(btnX, BRUTAL_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.8f : 0.5f, 0.1f, 0.1f);
-    glRecti(btnX, BRUTAL_BTN_Y, btnX + BTN_WIDTH, BRUTAL_BTN_Y + BTN_HEIGHT);
+    glColor3f(isMouseOverButton(L.rightX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT) ? 0.8f : 0.5f, 0.1f, 0.1f);
+    glRecti(L.rightX, L.row2Y, L.rightX + DIFF_BTN_WIDTH, L.row2Y + DIFF_BTN_HEIGHT);
     glColor3f(1.0f, 1.0f, 1.0f);
-    drawText(btnX + 75, BRUTAL_BTN_Y + 18, "BRUTAL");
+    drawCenteredText(L.rightX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT, "BRUTAL");
+
+    // BACK, centered below the grid
+    bool backHover = isMouseOverButton(L.backX, L.backY, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT);
+    glColor3f(backHover ? 0.4f : 0.25f, backHover ? 0.4f : 0.25f, backHover ? 0.4f : 0.25f);
+    glRecti(L.backX, L.backY, L.backX + DIFF_BTN_WIDTH, L.backY + DIFF_BTN_HEIGHT);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    drawCenteredText(L.backX, L.backY, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT, "BACK");
 
     glutSwapBuffers();
 }
@@ -504,6 +635,8 @@ void renderGame() {
 
     glColor3f(1.0f, 0.84f, 0.0f);
     drawText(WINDOW_WIDTH - 150, WINDOW_HEIGHT - 30, "SCORE: " + std::to_string(score));
+    glColor3f(0.7f, 0.7f, 0.7f);
+    drawText(WINDOW_WIDTH - 150, WINDOW_HEIGHT - 75, "BEST: " + std::to_string(getTopScore(currentDifficulty)), GLUT_BITMAP_HELVETICA_12);
 
     glColor3f(1.0f, 1.0f, 1.0f);
     drawText(WINDOW_WIDTH - 200, WINDOW_HEIGHT - 55, "LIVES:", GLUT_BITMAP_HELVETICA_12);
@@ -623,6 +756,9 @@ void renderGameOver(bool won) {
         drawText(WINDOW_WIDTH / 2 - 110, 360, "All vital sequence lives depleted!", GLUT_BITMAP_HELVETICA_12);
     }
 
+    glColor3f(1.0f, 0.84f, 0.0f);
+    drawText(WINDOW_WIDTH / 2 - 90, 330, "YOUR SCORE: " + std::to_string(getTopScore(currentDifficulty)), GLUT_BITMAP_HELVETICA_18);
+
     int restartBtnX = (WINDOW_WIDTH - BTN_WIDTH) / 2;
     glColor3f(isMouseOverButton(restartBtnX, RESTART_BTN_Y, BTN_WIDTH, BTN_HEIGHT) ? 0.3f : 0.2f, 0.6f, 0.2f);
     glRecti(restartBtnX, RESTART_BTN_Y, restartBtnX + BTN_WIDTH, RESTART_BTN_Y + BTN_HEIGHT);
@@ -639,6 +775,7 @@ void display() {
     else if (gameState == PAUSE) renderPauseMenu(); // Route logic tree block here
     else if (gameState == GAME_OVER) renderGameOver(false);
     else if (gameState == WIN) renderGameOver(true);
+    else if (gameState == SCOREBOARD) renderScoreboard();
 }
 
 bool isWall(float x, float y) {
@@ -677,11 +814,13 @@ void update(int value) {
                 score += 100;
                 playEatSound();
                 if (collectedSequence == targetSequence) {
+                    updateScoreboard();
                     gameState = WIN;
                 }
             }
             else {
                 playGameOverSound();
+                updateScoreboard();
                 gameState = GAME_OVER;
             }
         }
@@ -707,6 +846,7 @@ void update(int value) {
                 lives--;
                 if (lives <= 0) {
                     playGameOverSound();
+                    updateScoreboard();
                     gameState = GAME_OVER;
                     break;
                 }
@@ -768,7 +908,7 @@ void passiveMouse(int x, int y) {
     mouseX = (int)(((float)x / currentWidth) * WINDOW_WIDTH);
     mouseY = (int)(((float)(currentHeight - y) / currentHeight) * WINDOW_HEIGHT);
 
-    if (gameState == MENU || gameState == DIFFICULTY_SELECT || gameState == PAUSE || gameState == GAME_OVER || gameState == WIN) {
+    if (gameState == MENU || gameState == DIFFICULTY_SELECT || gameState == PAUSE || gameState == GAME_OVER || gameState == WIN || gameState == SCOREBOARD) {
         glutPostRedisplay();
     }
 }
@@ -786,30 +926,38 @@ void mouseClicks(int button, int state, int x, int y) {
             if (isMouseOverButton(btnX, START_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 gameState = DIFFICULTY_SELECT;
             }
+            else if (isMouseOverButton(btnX, SCOREBOARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                gameState = SCOREBOARD;
+            }
             else if (isMouseOverButton(btnX, EXIT_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
                 glutLeaveMainLoop();
             }
         }
         else if (gameState == DIFFICULTY_SELECT) {
-            if (isMouseOverButton(btnX, EASY_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+            DiffLayout L = getDifficultyLayout();
+
+            if (isMouseOverButton(L.leftX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT)) {
                 currentDifficulty = EASY;
                 resetGame();
                 gameState = GAME;
             }
-            else if (isMouseOverButton(btnX, MEDIUM_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+            else if (isMouseOverButton(L.rightX, L.row1Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT)) {
                 currentDifficulty = MEDIUM;
                 resetGame();
                 gameState = GAME;
             }
-            else if (isMouseOverButton(btnX, HARD_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+            else if (isMouseOverButton(L.leftX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT)) {
                 currentDifficulty = HARD;
                 resetGame();
-                gameState = GAME;   
+                gameState = GAME;
             }
-            else if (isMouseOverButton(btnX, BRUTAL_BTN_Y, BTN_WIDTH, BTN_HEIGHT)) {
+            else if (isMouseOverButton(L.rightX, L.row2Y, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT)) {
                 currentDifficulty = BRUTAL;
                 resetGame();
                 gameState = GAME;
+            }
+            else if (isMouseOverButton(L.backX, L.backY, DIFF_BTN_WIDTH, DIFF_BTN_HEIGHT)) {
+                gameState = MENU;
             }
         }
         // Added Pause tracking handlers
@@ -831,6 +979,11 @@ void mouseClicks(int button, int state, int x, int y) {
                 startBackgroundMusic();
             }
         }
+        else if (gameState == SCOREBOARD) {
+            if (isMouseOverButton(btnX, SCOREBOARD_BACK_Y, BTN_WIDTH, BTN_HEIGHT)) {
+                gameState = MENU;
+            }
+        }
     }
 }
 
@@ -848,10 +1001,12 @@ int main(int argc, char** argv) {
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     glutInitWindowPosition(100, 100);
     glutCreateWindow("DNA-man");
+    glutFullScreen(); // auto fullscreen on startup
 
     glutReshapeFunc(reshape);
 
     init();
+    loadScoreboard();
     startBackgroundMusic();
 
     glutDisplayFunc(display);
