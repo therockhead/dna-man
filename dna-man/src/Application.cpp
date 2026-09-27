@@ -989,7 +989,7 @@ void mouseClicks(int button, int state, int x, int y) {
 
 void init() {
     srand(time(NULL));
-    glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+    glClearColor(0.043f, 0.063f, 0.125f, 1.0f);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluOrtho2D(0, WINDOW_WIDTH, 0, WINDOW_HEIGHT);
